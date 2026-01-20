@@ -347,6 +347,18 @@ body {
   gap: 16px;
 }
 
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .form-actions {
   display: flex;
   gap: 12px;
@@ -539,5 +551,9 @@ body {
   .card-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
   }
 }

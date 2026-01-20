@@ -16,7 +16,23 @@
     </label>
     <label>
       分类
-      <input type="text" name="category" placeholder="如：工作 / 影音" value="{{ subscription['category'] if subscription else '' }}">
+      {% set current_category = subscription['category'] if subscription else '' %}
+      {% set category_in_list = current_category in categories %}
+      {% set show_custom_category = (not categories) or (current_category and not category_in_list) %}
+      <div class="field-stack">
+        <select data-select="category">
+          <option value="" {% if not current_category %}selected{% endif %}>选择已有分类</option>
+          {% if not categories %}
+            <option value="" disabled>暂无已有分类</option>
+          {% endif %}
+          {% for category in categories %}
+            <option value="{{ category }}" {% if current_category == category %}selected{% endif %}>{{ category }}</option>
+          {% endfor %}
+          <option value="__custom__" {% if show_custom_category %}selected{% endif %}>手动输入...</option>
+        </select>
+        <input type="text" name="category" data-input="category" placeholder="如：工作 / 影音" value="{{ current_category }}" {% if not show_custom_category %}hidden{% endif %}>
+      </div>
+      <div class="mini">可直接输入新分类</div>
     </label>
     <label>
       续费金额
@@ -25,12 +41,18 @@
     <label>
       货币
       {% set current_currency = subscription['currency'] if subscription else 'CNY' %}
-      <input name="currency" list="currency-list" value="{{ current_currency }}" placeholder="CNY">
-      <datalist id="currency-list">
-        {% for currency in currencies %}
-          <option value="{{ currency }}"></option>
-        {% endfor %}
-      </datalist>
+      {% set currency_in_list = current_currency in currencies %}
+      {% set show_custom_currency = current_currency and not currency_in_list %}
+      <div class="field-stack">
+        <select data-select="currency">
+          {% for currency in currencies %}
+            <option value="{{ currency }}" {% if current_currency == currency %}selected{% endif %}>{{ currency }}</option>
+          {% endfor %}
+          <option value="__custom__" {% if show_custom_currency %}selected{% endif %}>手动输入...</option>
+        </select>
+        <input name="currency" data-input="currency" value="{{ current_currency }}" placeholder="CNY" {% if not show_custom_currency %}hidden{% endif %}>
+      </div>
+      <div class="mini">选择常用币种或手动输入</div>
     </label>
     <label>
       续费类型

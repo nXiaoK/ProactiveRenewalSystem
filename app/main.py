@@ -263,12 +263,16 @@ def create_app():
             flash("订阅已新增", "success")
             return redirect(url_for("index"))
 
+        existing_categories = get_existing_categories(g.db)
+        existing_currencies = get_existing_currencies(g.db)
+        currency_options = merge_currency_options(existing_currencies)
         return render_template(
             "subscription_form.html",
             subscription=None,
             cycle_labels=CYCLE_LABELS,
             cycle_options=CYCLE_OPTIONS,
-            currencies=DEFAULT_CURRENCIES,
+            currencies=currency_options,
+            categories=existing_categories,
             default_reminder_days=default_reminder_days,
         )
 
@@ -331,12 +335,16 @@ def create_app():
             flash("订阅已更新", "success")
             return redirect(url_for("index"))
 
+        existing_categories = get_existing_categories(g.db)
+        existing_currencies = get_existing_currencies(g.db)
+        currency_options = merge_currency_options(existing_currencies)
         return render_template(
             "subscription_form.html",
             subscription=row,
             cycle_labels=CYCLE_LABELS,
             cycle_options=CYCLE_OPTIONS,
-            currencies=DEFAULT_CURRENCIES,
+            currencies=currency_options,
+            categories=existing_categories,
             default_reminder_days=row["reminder_days"],
         )
 
@@ -733,6 +741,38 @@ def load_settings(db):
     for key in keys:
         settings[key] = get_setting(db, key, "")
     return settings
+
+
+def get_existing_categories(db):
+    rows = db.execute(
+        "SELECT DISTINCT category FROM subscriptions "
+        "WHERE category IS NOT NULL AND TRIM(category) != '' "
+        "ORDER BY category"
+    ).fetchall()
+    return [row["category"] for row in rows]
+
+
+def get_existing_currencies(db):
+    rows = db.execute(
+        "SELECT DISTINCT currency FROM subscriptions "
+        "WHERE currency IS NOT NULL AND TRIM(currency) != '' "
+        "ORDER BY currency"
+    ).fetchall()
+    return [row["currency"].upper() for row in rows]
+
+
+def merge_currency_options(existing):
+    options = []
+    seen = set()
+    for currency in DEFAULT_CURRENCIES + existing:
+        if not currency:
+            continue
+        value = currency.upper()
+        if value in seen:
+            continue
+        seen.add(value)
+        options.append(value)
+    return options
 
 
 def load_fx_rates(db):

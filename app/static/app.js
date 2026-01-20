@@ -25,4 +25,52 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   });
+
+  const selectBindings = [
+    { select: "[data-select=\"category\"]", input: "[data-input=\"category\"]" },
+    { select: "[data-select=\"currency\"]", input: "[data-input=\"currency\"]" },
+  ];
+
+  const hasOption = (selectEl, value) =>
+    Array.from(selectEl.options).some((option) => option.value === value);
+
+  const syncField = (selectEl, inputEl) => {
+    const selectValue = selectEl.value;
+    if (selectValue === "__custom__") {
+      inputEl.hidden = false;
+      if (inputEl.dataset.autofill === "true") {
+        inputEl.value = "";
+      }
+      inputEl.dataset.autofill = "false";
+      return;
+    }
+
+    inputEl.hidden = true;
+    if (selectValue) {
+      inputEl.value = selectValue;
+      inputEl.dataset.autofill = "true";
+    }
+  };
+
+  selectBindings.forEach(({ select, input }) => {
+    const selectEl = document.querySelector(select);
+    const inputEl = document.querySelector(input);
+    if (!selectEl || !inputEl) {
+      return;
+    }
+
+    if (!selectEl.value && inputEl.value) {
+      if (hasOption(selectEl, inputEl.value)) {
+        selectEl.value = inputEl.value;
+      } else if (hasOption(selectEl, "__custom__")) {
+        selectEl.value = "__custom__";
+      }
+    }
+
+    syncField(selectEl, inputEl);
+
+    selectEl.addEventListener("change", () => {
+      syncField(selectEl, inputEl);
+    });
+  });
 });
