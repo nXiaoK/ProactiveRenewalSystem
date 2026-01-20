@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+import re
 import secrets
 import smtplib
 from datetime import datetime, timedelta
@@ -8,6 +9,7 @@ from email.mime.text import MIMEText
 
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
+from dateutil import parser as date_parser
 from flask import (
     Flask,
     Response,
@@ -494,27 +496,72 @@ def create_app():
             if upload is None:
                 flash("请选择要导入的 CSV", "error")
                 return redirect(url_for("import_csv"))
-            content = upload.read().decode("utf-8")
+            raw = upload.read()
+            content, _encoding = decode_csv_bytes(raw)
+            if content is None:
+                flash("CSV 编码无法识别，请使用 UTF-8 或 GBK 保存", "error")
+                return redirect(url_for("import_csv"))
             reader = csv.DictReader(io.StringIO(content))
+            if not reader.fieldnames:
+                flash("CSV 缺少表头，无法导入", "error")
+                return redirect(url_for("import_csv"))
+
+            header_map = build_header_map(reader.fieldnames)
+            if not header_map:
+                flash("CSV 表头无法识别，请使用导出模板或包含 name/amount/due_date 字段", "error")
+                return redirect(url_for("import_csv"))
+
+            required_headers = {"name", "amount", "due_date"}
+            missing_headers = required_headers - set(header_map.values())
+            if missing_headers:
+                missing = ", ".join(sorted(missing_headers))
+                flash(f"CSV 表头缺少必要字段：{missing}", "error")
+                return redirect(url_for("import_csv"))
+
             count = 0
+            skipped = 0
+            errors = []
+            default_reminder_days = safe_int(
+                get_setting(g.db, "default_reminder_days", "7"), 7
+            )
             now = now_iso()
-            for row in reader:
+            for line_no, raw_row in enumerate(reader, start=2):
+                if is_row_empty(raw_row):
+                    continue
+                row = normalize_row(raw_row, header_map)
+                if is_row_empty(row):
+                    continue
+
+                row_errors = []
                 name = (row.get("name") or "").strip()
                 if not name:
-                    continue
-                due_date = (row.get("due_date") or "").strip()
-                try:
-                    parse_date(due_date)
-                except ValueError:
-                    continue
-                billing_cycle = (row.get("billing_cycle") or "month").strip()
+                    row_errors.append("缺少服务名称")
+
+                amount = parse_amount(row.get("amount"))
+                if amount is None:
+                    row_errors.append("金额格式不正确")
+
+                currency = normalize_currency(row.get("currency"))
+                billing_cycle = normalize_cycle_value(row.get("billing_cycle"))
                 if billing_cycle not in CYCLE_OPTIONS:
+                    row_errors.append("续费类型不合法")
+
+                try:
+                    due_date_obj = parse_date_flexible(row.get("due_date"))
+                    due_date = due_date_obj.strftime("%Y-%m-%d")
+                except ValueError as exc:
+                    row_errors.append(str(exc))
+                    due_date = None
+
+                if row_errors:
+                    skipped += 1
+                    errors.append(f"第 {line_no} 行：{'; '.join(row_errors)}")
                     continue
-                enabled_raw = row.get("enabled")
-                if enabled_raw is None or str(enabled_raw).strip() == "":
-                    enabled_value = 1
-                else:
-                    enabled_value = 1 if as_bool(enabled_raw) else 0
+
+                enabled_value = parse_enabled(row.get("enabled"))
+                reminder_days = parse_reminder_days(
+                    row.get("reminder_days"), default_reminder_days
+                )
 
                 g.db.execute(
                     """
@@ -525,12 +572,12 @@ def create_app():
                     (
                         name,
                         (row.get("category") or "").strip(),
-                        safe_float(row.get("amount"), 0.0),
-                        (row.get("currency") or "CNY").strip().upper(),
+                        amount,
+                        currency,
                         billing_cycle,
                         due_date,
                         (row.get("renew_url") or "").strip(),
-                        safe_int(row.get("reminder_days"), 7),
+                        reminder_days,
                         enabled_value,
                         (row.get("notes") or "").strip(),
                         now,
@@ -539,7 +586,15 @@ def create_app():
                 )
                 count += 1
             g.db.commit()
-            flash(f"已导入 {count} 条订阅", "success")
+            if count > 0:
+                flash(f"导入完成：成功 {count} 条，跳过 {skipped} 条。", "success")
+            else:
+                flash("未导入任何记录，请检查 CSV 内容与字段格式。", "error")
+            if errors:
+                preview = " | ".join(errors[:5])
+                if len(errors) > 5:
+                    preview += f" ...共 {len(errors)} 条"
+                flash(f"跳过原因：{preview}", "error")
             return redirect(url_for("index"))
         return render_template("import.html")
 
@@ -937,6 +992,225 @@ def rrule_for_cycle(cycle):
         "5year": "FREQ=YEARLY;INTERVAL=5",
     }
     return mapping.get(cycle)
+
+
+HEADER_ALIASES = {
+    "name": "name",
+    "service": "name",
+    "服务名称": "name",
+    "服务": "name",
+    "category": "category",
+    "分类": "category",
+    "amount": "amount",
+    "price": "amount",
+    "金额": "amount",
+    "currency": "currency",
+    "币种": "currency",
+    "billing_cycle": "billing_cycle",
+    "cycle": "billing_cycle",
+    "续费类型": "billing_cycle",
+    "续费周期": "billing_cycle",
+    "周期": "billing_cycle",
+    "due_date": "due_date",
+    "到期日期": "due_date",
+    "到期时间": "due_date",
+    "renew_date": "due_date",
+    "renew_url": "renew_url",
+    "续费地址": "renew_url",
+    "续费链接": "renew_url",
+    "reminder_days": "reminder_days",
+    "提醒提前天数": "reminder_days",
+    "提醒天数": "reminder_days",
+    "enabled": "enabled",
+    "启用": "enabled",
+    "是否启用": "enabled",
+    "notes": "notes",
+    "备注": "notes",
+}
+
+CURRENCY_ALIASES = {
+    "CNY": "CNY",
+    "RMB": "CNY",
+    "人民币": "CNY",
+    "元": "CNY",
+    "¥": "CNY",
+    "￥": "CNY",
+    "USD": "USD",
+    "US$": "USD",
+    "$": "USD",
+    "美元": "USD",
+    "HKD": "HKD",
+    "HK$": "HKD",
+    "港币": "HKD",
+    "JPY": "JPY",
+    "日元": "JPY",
+    "EUR": "EUR",
+    "欧元": "EUR",
+    "GBP": "GBP",
+    "英镑": "GBP",
+    "AUD": "AUD",
+    "澳元": "AUD",
+    "SGD": "SGD",
+    "新币": "SGD",
+    "新加坡元": "SGD",
+}
+
+CYCLE_ALIASES = {
+    "day": "day",
+    "daily": "day",
+    "天": "day",
+    "日": "day",
+    "week": "week",
+    "weekly": "week",
+    "周": "week",
+    "month": "month",
+    "monthly": "month",
+    "月": "month",
+    "quarter": "quarter",
+    "季度": "quarter",
+    "季": "quarter",
+    "halfyear": "halfyear",
+    "half-year": "halfyear",
+    "半年": "halfyear",
+    "year": "year",
+    "annual": "year",
+    "yearly": "year",
+    "年": "year",
+    "2year": "2year",
+    "2-year": "2year",
+    "两年": "2year",
+    "2年": "2year",
+    "3year": "3year",
+    "3-year": "3year",
+    "三年": "3year",
+    "3年": "3year",
+    "4year": "4year",
+    "4-year": "4year",
+    "四年": "4year",
+    "4年": "4year",
+    "5year": "5year",
+    "5-year": "5year",
+    "五年": "5year",
+    "5年": "5year",
+}
+
+
+def decode_csv_bytes(raw):
+    if raw is None:
+        return None, None
+    for encoding in ("utf-8-sig", "utf-8", "gb18030"):
+        try:
+            return raw.decode(encoding), encoding
+        except UnicodeDecodeError:
+            continue
+    return None, None
+
+
+def normalize_header_key(value):
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def build_header_map(fieldnames):
+    header_map = {}
+    for name in fieldnames:
+        key = normalize_header_key(name)
+        canonical = HEADER_ALIASES.get(key)
+        if canonical:
+            header_map[name] = canonical
+    return header_map
+
+
+def normalize_row(raw_row, header_map):
+    normalized = {}
+    for key, value in raw_row.items():
+        if key is None:
+            continue
+        canonical = header_map.get(key)
+        if canonical:
+            normalized[canonical] = value
+    return normalized
+
+
+def is_row_empty(row):
+    if not row:
+        return True
+    for value in row.values():
+        if value is None:
+            continue
+        if str(value).strip():
+            return False
+    return True
+
+
+def parse_date_flexible(value):
+    if value is None or str(value).strip() == "":
+        raise ValueError("到期日期为空")
+    text = str(value).strip()
+    text = text.replace("/", "-").replace(".", "-")
+    try:
+        return parse_date(text)
+    except ValueError:
+        try:
+            return date_parser.parse(text, yearfirst=True, dayfirst=False).date()
+        except Exception as exc:
+            raise ValueError("到期日期格式不正确") from exc
+
+
+def normalize_cycle_value(value):
+    if value is None or str(value).strip() == "":
+        return "month"
+    key = str(value).strip().lower()
+    return CYCLE_ALIASES.get(key, key)
+
+
+def parse_amount(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace(",", "")
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def normalize_currency(value):
+    if value is None:
+        return "CNY"
+    text = str(value).strip()
+    if not text:
+        return "CNY"
+    key = text.replace(" ", "").upper()
+    if key in CURRENCY_ALIASES:
+        return CURRENCY_ALIASES[key]
+    return key
+
+
+def parse_enabled(value):
+    if value is None or str(value).strip() == "":
+        return 1
+    text = str(value).strip().lower()
+    truthy = {"1", "true", "yes", "on", "是", "启用", "开启"}
+    falsy = {"0", "false", "no", "off", "否", "停用", "禁用", "关闭"}
+    if text in truthy:
+        return 1
+    if text in falsy:
+        return 0
+    return 1 if as_bool(value) else 0
+
+
+def parse_reminder_days(value, default_days):
+    if value is None or str(value).strip() == "":
+        return default_days
+    days = safe_int(value, default_days)
+    return days if days >= 0 else default_days
 
 
 def main():
