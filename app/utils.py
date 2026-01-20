@@ -122,9 +122,29 @@ def remaining_value(amount_cny, due_date, cycle, today=None):
         return None
     if today is None:
         today = today_date()
-    total_days = cycle_length_days(due_date, cycle)
-    left_days = remaining_days(due_date, today)
-    return amount_cny * left_days / total_days
+    if due_date <= today:
+        return 0
+
+    if cycle in {"day", "week"}:
+        cycle_days = 1 if cycle == "day" else 7
+        left_days = (due_date - today).days
+        return amount_cny * left_days / cycle_days
+
+    # For month/year style cycles, align to the current cycle and count full cycles ahead.
+    steps = 0
+    cycle_end = due_date
+    cycle_start = subtract_cycle(cycle_end, cycle)
+    while cycle_start > today:
+        cycle_end = cycle_start
+        cycle_start = subtract_cycle(cycle_end, cycle)
+        steps += 1
+
+    total_days = (cycle_end - cycle_start).days
+    if total_days <= 0:
+        total_days = 1
+    left_days = (cycle_end - today).days
+    fraction = left_days / total_days
+    return amount_cny * (steps + fraction)
 
 
 def as_bool(value):

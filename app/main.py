@@ -118,6 +118,7 @@ def create_app():
         search = request.args.get("q", "").strip()
         category_filter = request.args.get("category", "all")
         status_filter = request.args.get("status", "all")
+        sort = request.args.get("sort", "due")
 
         query = "SELECT * FROM subscriptions"
         params = []
@@ -138,6 +139,8 @@ def create_app():
             "due_soon": 0,
             "total_cny": 0.0,
             "monthly_cny": 0.0,
+            "upcoming_30_cny": 0.0,
+            "yearly_cny": 0.0,
         }
 
         for row in rows:
@@ -159,8 +162,35 @@ def create_app():
                 if item["amount_cny"] is not None:
                     stats["total_cny"] += item["amount_cny"]
                     stats["monthly_cny"] += item["monthly_equiv_cny"]
+                    stats["yearly_cny"] += item["yearly_equiv_cny"]
+                    if item["remaining_days"] <= 30:
+                        stats["upcoming_30_cny"] += item["amount_cny"]
                 if item["due_soon"]:
                     stats["due_soon"] += 1
+
+        items = sort_items(items, sort)
+        upcoming = [
+            item for item in items if item["enabled"] and item["remaining_days"] <= 30
+        ]
+        upcoming = sorted(upcoming, key=lambda value: value["due_date"])[:5]
+
+        category_totals = {}
+        for item in items:
+            if not item["enabled"] or item["monthly_equiv_cny"] is None:
+                continue
+            category_totals[item["category"]] = category_totals.get(
+                item["category"], 0.0
+            ) + item["monthly_equiv_cny"]
+
+        total_monthly = sum(category_totals.values())
+        category_breakdown = []
+        for category, value in sorted(
+            category_totals.items(), key=lambda entry: entry[1], reverse=True
+        )[:5]:
+            percent = value / total_monthly * 100 if total_monthly else 0
+            category_breakdown.append(
+                {"category": category, "monthly_cny": value, "percent": percent}
+            )
 
         categories_sorted = sorted(categories)
         return render_template(
@@ -169,8 +199,11 @@ def create_app():
             categories=categories_sorted,
             current_category=category_filter,
             status_filter=status_filter,
+            sort=sort,
             search=search,
             stats=stats,
+            upcoming=upcoming,
+            category_breakdown=category_breakdown,
             cycle_labels=CYCLE_LABELS,
         )
 
@@ -327,6 +360,24 @@ def create_app():
         flash("订阅状态已更新", "success")
         return redirect(url_for("index"))
 
+    @app.route("/subscriptions/<int:sub_id>/renew", methods=["POST"])
+    def renew_subscription(sub_id):
+        row = g.db.execute("SELECT * FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
+        if row is None:
+            flash("未找到订阅", "error")
+            return redirect(url_for("index"))
+
+        due_date = parse_date(row["due_date"])
+        due_date, _ = normalize_due_date(due_date, row["billing_cycle"], today_date())
+        next_due = add_cycle(due_date, row["billing_cycle"])
+        g.db.execute(
+            "UPDATE subscriptions SET due_date = ?, updated_at = ? WHERE id = ?",
+            (next_due.strftime("%Y-%m-%d"), now_iso(), sub_id),
+        )
+        g.db.commit()
+        flash("已顺延一个周期", "success")
+        return redirect(url_for("index"))
+
     @app.route("/settings", methods=["GET", "POST"])
     def settings():
         if request.method == "POST":
@@ -389,6 +440,51 @@ def create_app():
             output.getvalue(),
             mimetype="text/csv",
             headers={"Content-Disposition": "attachment; filename=subscriptions.csv"},
+        )
+
+    @app.route("/export/ics")
+    def export_ics():
+        rows = g.db.execute(
+            "SELECT * FROM subscriptions WHERE enabled = 1 ORDER BY due_date ASC"
+        ).fetchall()
+        today = today_date()
+        lines = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//Renewal Pulse//EN",
+            "CALSCALE:GREGORIAN",
+        ]
+        for row in rows:
+            due_date = parse_date(row["due_date"])
+            due_date, _ = normalize_due_date(due_date, row["billing_cycle"], today)
+            dt_start = due_date.strftime("%Y%m%d")
+            uid = f"subscription-{row['id']}@renewal"
+            summary = f"{row['name']} 续费"
+            description = f"续费金额：{row['amount']} {row['currency']}"
+            if row["renew_url"]:
+                description += f"\\n续费地址：{row['renew_url']}"
+            lines.extend(
+                [
+                    "BEGIN:VEVENT",
+                    f"UID:{uid}",
+                    f"DTSTAMP:{ics_timestamp()}",
+                    f"DTSTART;VALUE=DATE:{dt_start}",
+                    f"SUMMARY:{escape_ics(summary)}",
+                    f"DESCRIPTION:{escape_ics(description)}",
+                ]
+            )
+            if row["renew_url"]:
+                lines.append(f"URL:{escape_ics(row['renew_url'])}")
+            rrule = rrule_for_cycle(row["billing_cycle"])
+            if rrule:
+                lines.append(f"RRULE:{rrule}")
+            lines.append("END:VEVENT")
+
+        lines.append("END:VCALENDAR")
+        return Response(
+            "\r\n".join(lines),
+            mimetype="text/calendar; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=subscriptions.ics"},
         )
 
     @app.route("/import", methods=["GET", "POST"])
@@ -531,8 +627,12 @@ def hydrate_subscription(row, fx_rates, today, default_reminder_days):
     total_days = cycle_length_days(due_date, row["billing_cycle"])
     remaining_cny = remaining_value(amount_cny, due_date, row["billing_cycle"], today)
     monthly_equiv_cny = None
+    yearly_equiv_cny = None
     if amount_cny is not None:
         monthly_equiv_cny = amount_cny / total_days * 30
+        yearly_equiv_cny = amount_cny / total_days * 365
+    progress_pct = (total_days - left_days) / total_days * 100 if total_days else 0
+    progress_pct = max(0, min(progress_pct, 100))
 
     return {
         "id": row["id"],
@@ -552,6 +652,8 @@ def hydrate_subscription(row, fx_rates, today, default_reminder_days):
         "due_soon": left_days <= reminder_days,
         "total_days": total_days,
         "monthly_equiv_cny": monthly_equiv_cny,
+        "yearly_equiv_cny": yearly_equiv_cny,
+        "progress_pct": progress_pct,
         "rolled": updated,
     }
 
@@ -774,6 +876,67 @@ def send_test_notification(db, channel):
     if channel == "email":
         return send_email(db, message)
     return False, "未知通道"
+
+
+def sort_items(items, sort_key):
+    if sort_key == "remaining":
+        return sorted(items, key=lambda item: item["remaining_days"])
+    if sort_key == "amount":
+        return sorted(
+            items,
+            key=lambda item: (item["amount_cny"] is None, -(item["amount_cny"] or 0)),
+        )
+    if sort_key == "monthly":
+        return sorted(
+            items,
+            key=lambda item: (
+                item["monthly_equiv_cny"] is None,
+                -(item["monthly_equiv_cny"] or 0),
+            ),
+        )
+    if sort_key == "yearly":
+        return sorted(
+            items,
+            key=lambda item: (
+                item["yearly_equiv_cny"] is None,
+                -(item["yearly_equiv_cny"] or 0),
+            ),
+        )
+    if sort_key == "name":
+        return sorted(items, key=lambda item: item["name"].lower())
+    return sorted(items, key=lambda item: item["due_date"])
+
+
+def ics_timestamp():
+    return datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+
+def escape_ics(value):
+    if value is None:
+        return ""
+    text = str(value)
+    return (
+        text.replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+        .replace("\n", "\\n")
+    )
+
+
+def rrule_for_cycle(cycle):
+    mapping = {
+        "day": "FREQ=DAILY;INTERVAL=1",
+        "week": "FREQ=WEEKLY;INTERVAL=1",
+        "month": "FREQ=MONTHLY;INTERVAL=1",
+        "quarter": "FREQ=MONTHLY;INTERVAL=3",
+        "halfyear": "FREQ=MONTHLY;INTERVAL=6",
+        "year": "FREQ=YEARLY;INTERVAL=1",
+        "2year": "FREQ=YEARLY;INTERVAL=2",
+        "3year": "FREQ=YEARLY;INTERVAL=3",
+        "4year": "FREQ=YEARLY;INTERVAL=4",
+        "5year": "FREQ=YEARLY;INTERVAL=5",
+    }
+    return mapping.get(cycle)
 
 
 def main():
