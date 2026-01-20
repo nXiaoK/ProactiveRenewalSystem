@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "续费提醒" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <div class="bg-shape"></div>
+  <header class="site-header">
+    <div class="logo">Renewal Pulse</div>
+    <nav class="nav">
+      <a href="{{ url_for('index') }}">概览</a>
+      <a href="{{ url_for('create_subscription') }}">新增订阅</a>
+      <a href="{{ url_for('import_csv') }}">导入</a>
+      <a href="{{ url_for('export_csv') }}">导出</a>
+      <a href="{{ url_for('settings') }}">设置</a>
+      <a href="{{ url_for('logout') }}" class="ghost">退出</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="flash-stack">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

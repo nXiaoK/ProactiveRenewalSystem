@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>订阅续费提醒</h1>
+    <p>统一管理你的服务续费周期、金额和提醒配置。</p>
+  </div>
+  <a href="{{ url_for('create_subscription') }}" class="btn primary">新增订阅</a>
+</section>
+
+<section class="stats">
+  <div class="stat-card">
+    <div class="stat-label">当前订阅</div>
+    <div class="stat-value">{{ stats.count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">即将到期</div>
+    <div class="stat-value">{{ stats.due_soon }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">总金额 (CNY)</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.total_cny) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">月均成本 (CNY)</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.monthly_cny) }}</div>
+  </div>
+</section>
+
+<section class="filters">
+  <form method="get" class="filter-bar">
+    <input type="search" name="q" placeholder="搜索服务或分类" value="{{ search }}">
+    <select name="category">
+      <option value="all">全部分类</option>
+      {% for category in categories %}
+        <option value="{{ category }}" {% if current_category == category %}selected{% endif %}>{{ category }}</option>
+      {% endfor %}
+    </select>
+    <select name="status">
+      <option value="all" {% if status_filter == 'all' %}selected{% endif %}>全部状态</option>
+      <option value="soon" {% if status_filter == 'soon' %}selected{% endif %}>即将到期</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>进行中</option>
+      <option value="paused" {% if status_filter == 'paused' %}selected{% endif %}>已暂停</option>
+    </select>
+    <button class="btn" type="submit">筛选</button>
+  </form>
+</section>
+
+<section class="cards">
+  {% for sub in subscriptions %}
+    <article class="card {% if sub.due_soon %}due-soon{% endif %} {% if not sub.enabled %}paused{% endif %}" style="--i: {{ loop.index }}">
+      <div class="card-header">
+        <div>
+          <h3>{{ sub.name }}</h3>
+          <div class="meta">{{ sub.category }} · {{ cycle_labels[sub.billing_cycle] }}</div>
+        </div>
+        <div class="badge">剩余 {{ sub.remaining_days }} 天</div>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div>
+            <div class="label">到期日</div>
+            <div class="value">{{ sub.due_date.strftime('%Y-%m-%d') }}</div>
+            {% if sub.rolled %}
+              <div class="mini">已自动顺延</div>
+            {% endif %}
+          </div>
+          <div>
+            <div class="label">金额</div>
+            <div class="value">{{ "%.2f"|format(sub.amount) }} {{ sub.currency }}</div>
+            <div class="mini">折合 ¥{{ "%.2f"|format(sub.amount_cny) if sub.amount_cny is not none else "--" }}</div>
+          </div>
+          <div>
+            <div class="label">剩余价值</div>
+            <div class="value">¥{{ "%.2f"|format(sub.remaining_value) if sub.remaining_value is not none else "--" }}</div>
+            <div class="mini">提醒：提前 {{ sub.reminder_days }} 天</div>
+          </div>
+        </div>
+        {% if sub.notes %}
+          <div class="notes">{{ sub.notes }}</div>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <div class="links">
+          {% if sub.renew_url %}
+            <a href="{{ sub.renew_url }}" target="_blank" class="btn ghost">续费地址</a>
+            <button type="button" class="btn ghost" data-copy="{{ sub.renew_url }}">复制链接</button>
+          {% else %}
+            <span class="muted">未填写续费地址</span>
+          {% endif %}
+        </div>
+        <div class="actions">
+          <form method="post" action="{{ url_for('toggle_subscription', sub_id=sub.id) }}">
+            <button type="submit" class="btn ghost">{{ "暂停" if sub.enabled else "启用" }}</button>
+          </form>
+          <a href="{{ url_for('edit_subscription', sub_id=sub.id) }}" class="btn">编辑</a>
+          <form method="post" action="{{ url_for('delete_subscription', sub_id=sub.id) }}">
+            <button type="submit" class="btn danger" data-confirm="确认删除 {{ sub.name }} ？">删除</button>
+          </form>
+        </div>
+      </div>
+    </article>
+  {% else %}
+    <div class="empty">还没有订阅，点击“新增订阅”开始。</div>
+  {% endfor %}
+</section>
+{% endblock %}

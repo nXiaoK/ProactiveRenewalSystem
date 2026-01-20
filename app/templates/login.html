@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>访问验证</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h1>服务订阅管家</h1>
+    <p>请输入访问密码</p>
+    {% if error %}
+      <div class="flash error">{{ error }}</div>
+    {% endif %}
+    <form method="post" class="form">
+      <input type="password" name="password" placeholder="访问密码" required>
+      <button type="submit" class="btn primary">进入主页</button>
+    </form>
+    {% if default_password %}
+      <div class="hint">默认密码：{{ default_password }}（建议尽快修改）</div>
+    {% endif %}
+  </div>
+</body>
+</html>

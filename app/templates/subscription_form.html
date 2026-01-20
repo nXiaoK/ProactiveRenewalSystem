@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>{{ "新增订阅" if subscription is none else "编辑订阅" }}</h1>
+    <p>完善续费金额、周期与提醒配置。</p>
+  </div>
+</section>
+
+<form method="post" class="form card-form">
+  <div class="grid">
+    <label>
+      服务名称
+      <input type="text" name="name" required value="{{ subscription['name'] if subscription else '' }}">
+    </label>
+    <label>
+      分类
+      <input type="text" name="category" placeholder="如：工作 / 影音" value="{{ subscription['category'] if subscription else '' }}">
+    </label>
+    <label>
+      续费金额
+      <input type="number" step="0.01" name="amount" required value="{{ subscription['amount'] if subscription else '' }}">
+    </label>
+    <label>
+      货币
+      {% set current_currency = subscription['currency'] if subscription else 'CNY' %}
+      <input name="currency" list="currency-list" value="{{ current_currency }}" placeholder="CNY">
+      <datalist id="currency-list">
+        {% for currency in currencies %}
+          <option value="{{ currency }}"></option>
+        {% endfor %}
+      </datalist>
+    </label>
+    <label>
+      续费类型
+      <select name="billing_cycle">
+        {% set current_cycle = subscription['billing_cycle'] if subscription else 'month' %}
+        {% for cycle in cycle_options %}
+          <option value="{{ cycle }}" {% if current_cycle == cycle %}selected{% endif %}>{{ cycle_labels[cycle] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      到期日期
+      <input type="date" name="due_date" required value="{{ subscription['due_date'] if subscription else '' }}">
+    </label>
+    <label>
+      续费地址
+      <input type="url" name="renew_url" placeholder="https://" value="{{ subscription['renew_url'] if subscription else '' }}">
+    </label>
+    <label>
+      提醒提前天数
+      <input type="number" name="reminder_days" value="{{ subscription['reminder_days'] if subscription else default_reminder_days }}">
+    </label>
+  </div>
+
+  <label>
+    备注
+    <textarea name="notes" rows="3">{{ subscription['notes'] if subscription else '' }}</textarea>
+  </label>
+
+  <label class="checkbox">
+    <input type="checkbox" name="enabled" {% if subscription is none or subscription['enabled'] %}checked{% endif %}>
+    启用提醒
+  </label>
+
+  <div class="form-actions">
+    <button type="submit" class="btn primary">保存</button>
+    <a href="{{ url_for('index') }}" class="btn ghost">取消</a>
+  </div>
+</form>
+{% endblock %}

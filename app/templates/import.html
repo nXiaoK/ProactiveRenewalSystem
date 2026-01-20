@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>导入订阅</h1>
+    <p>上传 CSV 文件批量导入订阅数据。</p>
+  </div>
+  <a href="{{ url_for('export_csv') }}" class="btn ghost">下载模板</a>
+</section>
+
+<form method="post" enctype="multipart/form-data" class="form card-form">
+  <label>
+    选择 CSV 文件
+    <input type="file" name="file" accept=".csv" required>
+  </label>
+  <div class="form-actions">
+    <button type="submit" class="btn primary">开始导入</button>
+    <a href="{{ url_for('index') }}" class="btn ghost">返回</a>
+  </div>
+</form>
+
+<section class="tips">
+  <h3>字段说明</h3>
+  <ul>
+    <li>name, category, amount, currency, billing_cycle, due_date, renew_url, reminder_days, enabled, notes</li>
+    <li>billing_cycle 可选：day / week / quarter / halfyear / month / year / 2year / 3year / 4year / 5year</li>
+    <li>due_date 格式：YYYY-MM-DD</li>
+  </ul>
+</section>
+{% endblock %}
