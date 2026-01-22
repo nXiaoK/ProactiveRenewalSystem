@@ -19,20 +19,28 @@
     <div class="stat-value">{{ stats.due_soon }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">总金额 (CNY)</div>
-    <div class="stat-value">¥{{ "%.2f"|format(stats.total_cny) }}</div>
+    <div class="stat-label">总支出 (CNY)</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.expense_total_cny) }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">月均成本 (CNY)</div>
-    <div class="stat-value">¥{{ "%.2f"|format(stats.monthly_cny) }}</div>
+    <div class="stat-label">总收益 (CNY)</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.income_total_cny) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">月均支出 (CNY)</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.expense_monthly_cny) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">月均收益 (CNY)</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.income_monthly_cny) }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">30天内应付</div>
-    <div class="stat-value">¥{{ "%.2f"|format(stats.upcoming_30_cny) }}</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.expense_upcoming_30_cny) }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">年度预算 (CNY)</div>
-    <div class="stat-value">¥{{ "%.2f"|format(stats.yearly_cny) }}</div>
+    <div class="stat-label">30天内应收</div>
+    <div class="stat-value">¥{{ "%.2f"|format(stats.income_upcoming_30_cny) }}</div>
   </div>
 </section>
 
@@ -121,7 +129,10 @@
       <div class="card-header">
         <div>
           <h3>{{ sub.name }}</h3>
-          <div class="meta">{{ sub.category }} · {{ cycle_labels[sub.billing_cycle] }}</div>
+          <div class="meta">
+            {{ sub.category }} · {{ cycle_labels[sub.billing_cycle] }}
+            <span class="flow-tag {{ 'income' if sub.is_income else 'expense' }}">{{ sub.flow_label }}</span>
+          </div>
         </div>
         <div class="badge">剩余 {{ sub.remaining_days }} 天</div>
       </div>
@@ -191,7 +202,10 @@
     <div class="compact-row {% if sub.due_soon %}due-soon{% endif %} {% if not sub.enabled %}paused{% endif %}">
       <div class="compact-main">
         <div class="compact-title">{{ sub.name }}</div>
-        <div class="compact-meta">{{ sub.category }} · {{ cycle_labels[sub.billing_cycle] }} · 到期 {{ sub.due_date.strftime('%Y-%m-%d') }}</div>
+        <div class="compact-meta">
+          {{ sub.category }} · {{ cycle_labels[sub.billing_cycle] }} · 到期 {{ sub.due_date.strftime('%Y-%m-%d') }}
+          <span class="flow-tag {{ 'income' if sub.is_income else 'expense' }}">{{ sub.flow_label }}</span>
+        </div>
       </div>
       <div class="compact-right">
         <div class="compact-amount">{{ "%.2f"|format(sub.amount) }} {{ sub.currency }}</div>
@@ -220,6 +234,7 @@
         <tr>
           <th>服务</th>
           <th>分类</th>
+          <th>类型</th>
           <th>周期</th>
           <th>到期日</th>
           <th>剩余</th>
@@ -235,6 +250,7 @@
           <tr class="{% if sub.due_soon %}due-soon{% endif %} {% if not sub.enabled %}paused{% endif %}">
             <td>{{ sub.name }}</td>
             <td>{{ sub.category }}</td>
+            <td>{{ sub.flow_label }}</td>
             <td>{{ cycle_labels[sub.billing_cycle] }}</td>
             <td>{{ sub.due_date.strftime('%Y-%m-%d') }}</td>
             <td>{{ sub.remaining_days }} 天</td>
@@ -257,7 +273,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="10" class="empty">还没有订阅，点击“新增订阅”开始。</td>
+            <td colspan="11" class="empty">还没有订阅，点击“新增订阅”开始。</td>
           </tr>
         {% endfor %}
       </tbody>

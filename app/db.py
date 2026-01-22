@@ -34,6 +34,7 @@ SCHEMA_STATEMENTS = [
         billing_cycle TEXT NOT NULL,
         due_date TEXT NOT NULL,
         renew_url TEXT,
+        flow TEXT NOT NULL DEFAULT 'expense',
         reminder_days INTEGER NOT NULL DEFAULT 7,
         enabled INTEGER NOT NULL DEFAULT 1,
         notes TEXT,
@@ -88,8 +89,21 @@ def init_db():
     for statement in SCHEMA_STATEMENTS:
         cur.execute(statement)
     db.commit()
+    ensure_migrations(db)
     ensure_default_settings(db)
     db.close()
+
+
+def ensure_migrations(db):
+    ensure_column(db, "subscriptions", "flow", "TEXT NOT NULL DEFAULT 'expense'")
+
+
+def ensure_column(db, table, column, definition):
+    columns = [row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column in columns:
+        return
+    db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    db.commit()
 
 
 def ensure_default_settings(db):

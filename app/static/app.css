@@ -119,6 +119,8 @@ body {
 .stat-card:nth-child(4) { animation-delay: 0.2s; }
 .stat-card:nth-child(5) { animation-delay: 0.25s; }
 .stat-card:nth-child(6) { animation-delay: 0.3s; }
+.stat-card:nth-child(7) { animation-delay: 0.35s; }
+.stat-card:nth-child(8) { animation-delay: 0.4s; }
 
 .stat-label {
   color: var(--muted);
@@ -228,6 +230,27 @@ body {
 .meta {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.flow-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  margin-left: 6px;
+  background: rgba(255, 143, 63, 0.18);
+  color: var(--accent-dark);
+}
+
+.flow-tag.income {
+  background: rgba(15, 107, 101, 0.16);
+  color: var(--teal);
+}
+
+.flow-tag.expense {
+  background: rgba(255, 143, 63, 0.18);
+  color: var(--accent-dark);
 }
 
 .badge {
@@ -354,7 +377,7 @@ body {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0 10px;
-  min-width: 860px;
+  min-width: 980px;
 }
 
 .table-view th,

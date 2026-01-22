@@ -50,6 +50,7 @@ from .utils import (
 )
 
 PUBLIC_ENDPOINTS = {"login", "static"}
+FLOW_LABELS = {"expense": "支出", "income": "收益"}
 
 
 def load_secret_key():
@@ -143,10 +144,12 @@ def create_app():
         stats = {
             "count": 0,
             "due_soon": 0,
-            "total_cny": 0.0,
-            "monthly_cny": 0.0,
-            "upcoming_30_cny": 0.0,
-            "yearly_cny": 0.0,
+            "expense_total_cny": 0.0,
+            "income_total_cny": 0.0,
+            "expense_monthly_cny": 0.0,
+            "income_monthly_cny": 0.0,
+            "expense_upcoming_30_cny": 0.0,
+            "income_upcoming_30_cny": 0.0,
         }
 
         for row in rows:
@@ -166,11 +169,16 @@ def create_app():
             stats["count"] += 1
             if item["enabled"]:
                 if item["amount_cny"] is not None:
-                    stats["total_cny"] += item["amount_cny"]
-                    stats["monthly_cny"] += item["monthly_equiv_cny"]
-                    stats["yearly_cny"] += item["yearly_equiv_cny"]
-                    if item["remaining_days"] <= 30:
-                        stats["upcoming_30_cny"] += item["amount_cny"]
+                    if item["is_income"]:
+                        stats["income_total_cny"] += item["amount_cny"]
+                        stats["income_monthly_cny"] += item["monthly_equiv_cny"]
+                        if item["remaining_days"] <= 30:
+                            stats["income_upcoming_30_cny"] += item["amount_cny"]
+                    else:
+                        stats["expense_total_cny"] += item["amount_cny"]
+                        stats["expense_monthly_cny"] += item["monthly_equiv_cny"]
+                        if item["remaining_days"] <= 30:
+                            stats["expense_upcoming_30_cny"] += item["amount_cny"]
                 if item["due_soon"]:
                     stats["due_soon"] += 1
 
@@ -182,7 +190,11 @@ def create_app():
 
         category_totals = {}
         for item in items:
-            if not item["enabled"] or item["monthly_equiv_cny"] is None:
+            if (
+                not item["enabled"]
+                or item["is_income"]
+                or item["monthly_equiv_cny"] is None
+            ):
                 continue
             category_totals[item["category"]] = category_totals.get(
                 item["category"], 0.0
@@ -232,9 +244,13 @@ def create_app():
             renew_url = form.get("renew_url", "").strip()
             notes = form.get("notes", "").strip()
             enabled = 1 if form.get("enabled") == "on" else 0
+            flow = form.get("flow", "expense").strip()
 
             if billing_cycle not in CYCLE_OPTIONS:
                 flash("续费类型不合法", "error")
+                return redirect(url_for("create_subscription"))
+            if flow not in {"expense", "income"}:
+                flash("类型不合法", "error")
                 return redirect(url_for("create_subscription"))
             try:
                 parse_date(due_date)
@@ -246,8 +262,8 @@ def create_app():
             g.db.execute(
                 """
                 INSERT INTO subscriptions
-                (name, category, amount, currency, billing_cycle, due_date, renew_url, reminder_days, enabled, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (name, category, amount, currency, billing_cycle, due_date, renew_url, flow, reminder_days, enabled, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
@@ -257,6 +273,7 @@ def create_app():
                     billing_cycle,
                     due_date,
                     renew_url,
+                    flow,
                     reminder_days,
                     enabled,
                     notes,
@@ -304,9 +321,13 @@ def create_app():
             renew_url = form.get("renew_url", row["renew_url"] or "")
             notes = form.get("notes", row["notes"] or "")
             enabled = 1 if form.get("enabled") == "on" else 0
+            flow = form.get("flow", row["flow"] or "expense").strip()
 
             if billing_cycle not in CYCLE_OPTIONS:
                 flash("续费类型不合法", "error")
+                return redirect(url_for("edit_subscription", sub_id=sub_id))
+            if flow not in {"expense", "income"}:
+                flash("类型不合法", "error")
                 return redirect(url_for("edit_subscription", sub_id=sub_id))
             try:
                 parse_date(due_date)
@@ -318,7 +339,7 @@ def create_app():
                 """
                 UPDATE subscriptions
                 SET name = ?, category = ?, amount = ?, currency = ?, billing_cycle = ?, due_date = ?,
-                    renew_url = ?, reminder_days = ?, enabled = ?, notes = ?, updated_at = ?
+                    renew_url = ?, flow = ?, reminder_days = ?, enabled = ?, notes = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -329,6 +350,7 @@ def create_app():
                     billing_cycle,
                     due_date,
                     renew_url,
+                    flow,
                     reminder_days,
                     enabled,
                     notes,
@@ -429,6 +451,7 @@ def create_app():
                 "billing_cycle",
                 "due_date",
                 "renew_url",
+                "flow",
                 "reminder_days",
                 "enabled",
                 "notes",
@@ -445,6 +468,7 @@ def create_app():
                     row["billing_cycle"],
                     row["due_date"],
                     row["renew_url"],
+                    row["flow"],
                     row["reminder_days"],
                     row["enabled"],
                     row["notes"],
@@ -559,6 +583,10 @@ def create_app():
                 if billing_cycle not in CYCLE_OPTIONS:
                     row_errors.append("续费类型不合法")
 
+                flow = normalize_flow(row.get("flow"))
+                if flow not in {"expense", "income"}:
+                    row_errors.append("类型不合法")
+
                 try:
                     due_date_obj = parse_date_flexible(row.get("due_date"))
                     due_date = due_date_obj.strftime("%Y-%m-%d")
@@ -579,8 +607,8 @@ def create_app():
                 g.db.execute(
                     """
                     INSERT INTO subscriptions
-                    (name, category, amount, currency, billing_cycle, due_date, renew_url, reminder_days, enabled, notes, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (name, category, amount, currency, billing_cycle, due_date, renew_url, flow, reminder_days, enabled, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         name,
@@ -590,6 +618,7 @@ def create_app():
                         billing_cycle,
                         due_date,
                         (row.get("renew_url") or "").strip(),
+                        flow,
                         reminder_days,
                         enabled_value,
                         (row.get("notes") or "").strip(),
@@ -690,6 +719,8 @@ def hydrate_subscription(row, fx_rates, today, default_reminder_days):
         g.db.commit()
 
     reminder_days = row["reminder_days"] if row["reminder_days"] is not None else default_reminder_days
+    flow = row["flow"] or "expense"
+    is_income = flow == "income"
     amount_cny = convert_to_cny(row["amount"], row["currency"], fx_rates)
     left_days = remaining_days(due_date, today)
     total_days = cycle_length_days(due_date, row["billing_cycle"])
@@ -712,6 +743,9 @@ def hydrate_subscription(row, fx_rates, today, default_reminder_days):
         "billing_cycle": row["billing_cycle"],
         "due_date": due_date,
         "renew_url": row["renew_url"],
+        "flow": flow,
+        "flow_label": FLOW_LABELS.get(flow, "支出"),
+        "is_income": is_income,
         "reminder_days": reminder_days,
         "remaining_days": left_days,
         "remaining_value": remaining_cny,
@@ -917,9 +951,11 @@ def format_reminder_message(row, due_date, left_days, amount_cny):
     amount_display = f"{row['amount']} {row['currency']}"
     if amount_cny is not None:
         amount_display += f"（约 ¥{amount_cny:.2f}）"
+    flow_label = FLOW_LABELS.get(row["flow"] or "expense", "支出")
     return (
         f"订阅续费提醒\n"
         f"服务：{row['name']}\n"
+        f"类型：{flow_label}\n"
         f"到期：{due_date.strftime('%Y-%m-%d')}（剩余 {left_days} 天）\n"
         f"金额：{amount_display}\n"
         f"续费地址：{row['renew_url'] or '未填写'}"
@@ -1063,6 +1099,11 @@ HEADER_ALIASES = {
     "renew_url": "renew_url",
     "续费地址": "renew_url",
     "续费链接": "renew_url",
+    "flow": "flow",
+    "type": "flow",
+    "类型": "flow",
+    "收支": "flow",
+    "收益类型": "flow",
     "reminder_days": "reminder_days",
     "提醒提前天数": "reminder_days",
     "提醒天数": "reminder_days",
@@ -1139,6 +1180,19 @@ CYCLE_ALIASES = {
     "5年": "5year",
 }
 
+FLOW_ALIASES = {
+    "expense": "expense",
+    "cost": "expense",
+    "支出": "expense",
+    "支出类": "expense",
+    "消费": "expense",
+    "income": "income",
+    "revenue": "income",
+    "收益": "income",
+    "收入": "income",
+    "出租": "income",
+}
+
 
 def decode_csv_bytes(raw):
     if raw is None:
@@ -1208,6 +1262,13 @@ def normalize_cycle_value(value):
         return "month"
     key = str(value).strip().lower()
     return CYCLE_ALIASES.get(key, key)
+
+
+def normalize_flow(value):
+    if value is None or str(value).strip() == "":
+        return "expense"
+    key = str(value).strip().lower()
+    return FLOW_ALIASES.get(key, key)
 
 
 def parse_amount(value):
