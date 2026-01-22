@@ -195,7 +195,8 @@
       </div>
       <div class="compact-right">
         <div class="compact-amount">{{ "%.2f"|format(sub.amount) }} {{ sub.currency }}</div>
-        <div class="mini">剩 {{ sub.remaining_days }} 天 · ¥{{ "%.2f"|format(sub.remaining_value) if sub.remaining_value is not none else "--" }}</div>
+        <div class="mini">剩 {{ sub.remaining_days }} 天</div>
+        <div class="mini">剩余价值 ¥{{ "%.2f"|format(sub.remaining_value) if sub.remaining_value is not none else "--" }}</div>
       </div>
       <div class="compact-actions">
         <form method="post" action="{{ url_for('toggle_subscription', sub_id=sub.id) }}">
