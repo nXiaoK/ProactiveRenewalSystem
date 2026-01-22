@@ -36,8 +36,10 @@
   </div>
 </section>
 
+<div class="view-root view-{{ view }}">
 <section class="filters">
   <form method="get" class="filter-bar">
+    <input type="hidden" name="view" value="{{ view }}">
     <input type="search" name="q" placeholder="搜索服务或分类" value="{{ search }}">
     <select name="category">
       <option value="all">全部分类</option>
@@ -61,6 +63,12 @@
     </select>
     <button class="btn" type="submit">筛选</button>
   </form>
+</section>
+
+<section class="view-toggle" data-view-toggle>
+  <button type="button" class="btn ghost {% if view == 'card' %}active{% endif %}" data-view="card">卡片</button>
+  <button type="button" class="btn ghost {% if view == 'compact' %}active{% endif %}" data-view="compact">紧凑</button>
+  <button type="button" class="btn ghost {% if view == 'table' %}active{% endif %}" data-view="table">表格</button>
 </section>
 
 <section class="insights">
@@ -107,7 +115,7 @@
   </article>
 </section>
 
-<section class="cards">
+<section class="cards view-card-only">
   {% for sub in subscriptions %}
     <article class="card {% if sub.due_soon %}due-soon{% endif %} {% if not sub.enabled %}paused{% endif %}" style="--i: {{ loop.index }}">
       <div class="card-header">
@@ -177,4 +185,83 @@
     <div class="empty">还没有订阅，点击“新增订阅”开始。</div>
   {% endfor %}
 </section>
+
+<section class="compact-list view-compact-only">
+  {% for sub in subscriptions %}
+    <div class="compact-row {% if sub.due_soon %}due-soon{% endif %} {% if not sub.enabled %}paused{% endif %}">
+      <div class="compact-main">
+        <div class="compact-title">{{ sub.name }}</div>
+        <div class="compact-meta">{{ sub.category }} · {{ cycle_labels[sub.billing_cycle] }} · 到期 {{ sub.due_date.strftime('%Y-%m-%d') }}</div>
+      </div>
+      <div class="compact-right">
+        <div class="compact-amount">{{ "%.2f"|format(sub.amount) }} {{ sub.currency }}</div>
+        <div class="mini">剩 {{ sub.remaining_days }} 天 · ¥{{ "%.2f"|format(sub.remaining_value) if sub.remaining_value is not none else "--" }}</div>
+      </div>
+      <div class="compact-actions">
+        <form method="post" action="{{ url_for('toggle_subscription', sub_id=sub.id) }}">
+          <button type="submit" class="btn small ghost">{{ "暂停" if sub.enabled else "启用" }}</button>
+        </form>
+        <form method="post" action="{{ url_for('renew_subscription', sub_id=sub.id) }}">
+          <button type="submit" class="btn small ghost" data-confirm="确认已续费并顺延 {{ sub.name }}？">已续费</button>
+        </form>
+        <a href="{{ url_for('edit_subscription', sub_id=sub.id) }}" class="btn small">编辑</a>
+      </div>
+    </div>
+  {% else %}
+    <div class="empty">还没有订阅，点击“新增订阅”开始。</div>
+  {% endfor %}
+</section>
+
+<section class="table-view view-table-only">
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>服务</th>
+          <th>分类</th>
+          <th>周期</th>
+          <th>到期日</th>
+          <th>剩余</th>
+          <th>金额</th>
+          <th>折合</th>
+          <th>剩余价值</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sub in subscriptions %}
+          <tr class="{% if sub.due_soon %}due-soon{% endif %} {% if not sub.enabled %}paused{% endif %}">
+            <td>{{ sub.name }}</td>
+            <td>{{ sub.category }}</td>
+            <td>{{ cycle_labels[sub.billing_cycle] }}</td>
+            <td>{{ sub.due_date.strftime('%Y-%m-%d') }}</td>
+            <td>{{ sub.remaining_days }} 天</td>
+            <td>{{ "%.2f"|format(sub.amount) }} {{ sub.currency }}</td>
+            <td>¥{{ "%.2f"|format(sub.amount_cny) if sub.amount_cny is not none else "--" }}</td>
+            <td>¥{{ "%.2f"|format(sub.remaining_value) if sub.remaining_value is not none else "--" }}</td>
+            <td>{{ "启用" if sub.enabled else "暂停" }}</td>
+            <td class="table-actions">
+              <form method="post" action="{{ url_for('toggle_subscription', sub_id=sub.id) }}">
+                <button type="submit" class="btn small ghost">{{ "暂停" if sub.enabled else "启用" }}</button>
+              </form>
+              <form method="post" action="{{ url_for('renew_subscription', sub_id=sub.id) }}">
+                <button type="submit" class="btn small ghost" data-confirm="确认已续费并顺延 {{ sub.name }}？">已续费</button>
+              </form>
+              <a href="{{ url_for('edit_subscription', sub_id=sub.id) }}" class="btn small">编辑</a>
+              <form method="post" action="{{ url_for('delete_subscription', sub_id=sub.id) }}">
+                <button type="submit" class="btn small danger" data-confirm="确认删除 {{ sub.name }} ？">删除</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="10" class="empty">还没有订阅，点击“新增订阅”开始。</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+</div>
 {% endblock %}

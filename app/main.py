@@ -121,6 +121,10 @@ def create_app():
         category_filter = request.args.get("category", "all")
         status_filter = request.args.get("status", "all")
         sort = request.args.get("sort", "due")
+        view = request.args.get("view", "card")
+        allowed_views = {"card", "compact", "table"}
+        if view not in allowed_views:
+            view = "card"
 
         query = "SELECT * FROM subscriptions"
         params = []
@@ -202,6 +206,7 @@ def create_app():
             current_category=category_filter,
             status_filter=status_filter,
             sort=sort,
+            view=view,
             search=search,
             stats=stats,
             upcoming=upcoming,
