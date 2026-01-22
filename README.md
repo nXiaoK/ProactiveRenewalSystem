@@ -28,12 +28,25 @@ python -m app
 ## Docker 一键部署
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 访问 `http://localhost:8000`。
 
 数据默认保存到 `./data`。
+
+## GitHub Actions + Watchtower 自动更新
+
+1) 修改 `docker-compose.yml` 中的镜像地址，把 `<github-username>` 替换成你的 GitHub 用户名。
+2) 推送代码到 `main` 分支，GitHub Actions 会自动构建并推送镜像到 GHCR。
+3) 服务器运行 `docker compose up -d`，Watchtower 会每 5 分钟检查并自动更新容器。
+4) 保持 `.github/workflows/docker.yml` 的镜像名与 `docker-compose.yml` 一致。
+
+如果仓库是私有的，需要在服务器上先登录 GHCR：
+
+```bash
+docker login ghcr.io -u <github-username> -p <PAT-with-packages-read>
+```
 
 ## 提醒通道配置
 
